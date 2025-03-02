@@ -5,10 +5,19 @@ import {
   Image,
   TouchableOpacity,
   GestureResponderEvent,
+  Linking,
+  Platform,
 } from "react-native";
 import { Canvas, Path } from "@shopify/react-native-skia";
 import React, { useState } from "react";
 import { Colors } from "@/constants/Colors";
+import * as FileSystem from "expo-file-system";
+import Share from "react-native-share";
+import DeviceInfo from "react-native-device-info";
+
+const getAppId = () => {
+  return DeviceInfo.getBundleId(); // Automatically gets the App ID from the app's package
+};
 
 const colors = ["black", "red", "blue", "green", "purple"];
 const strokeWidths = [2, 4, 6, 8, 10];
@@ -59,6 +68,38 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
 
   const discardPhoto = () => {
     setPhoto(null);
+  };
+
+  const shareToInstagram = async (photoUri: string, caption: string) => {
+    try {
+      const fileUri = FileSystem.cacheDirectory + "edited_photo.jpg";
+      await FileSystem.copyAsync({ from: photoUri, to: fileUri });
+
+      const APP_ID = getAppId(); // Fetch the app's ID dynamically
+
+      if (Platform.OS === "ios") {
+        // Instagram Stories Deep Linking on iOS
+        const instagramUrl = `instagram-stories://share?source_application=${APP_ID}&backgroundImage=${fileUri}&contentURL=${encodeURIComponent(
+          caption
+        )}`;
+        Linking.openURL(instagramUrl).catch(() => {
+          alert("Instagram is not installed or does not support sharing.");
+        });
+      } else {
+        // Instagram Intent on Android
+        const shareOptions: any = {
+          title: "Share to Instagram",
+          url: `file://${fileUri}`,
+          social: Share.Social.INSTAGRAM_STORIES,
+          message: caption,
+          stickerImage: `file://${fileUri}`,
+          appId: APP_ID, // Dynamically set the appId
+        };
+        await Share.shareSingle(shareOptions);
+      }
+    } catch (error) {
+      console.error("Error sharing to Instagram", error);
+    }
   };
 
   return (
@@ -148,6 +189,15 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
             <Text style={[styles.btnText, styles.controlBtn]}>
               Clear Canvas
             </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              if (photo) {
+                shareToInstagram(photo, "hello");
+              }
+            }}
+          >
+            <Text style={styles.btnText}>Share to IG</Text>
           </TouchableOpacity>
         </View>
       </View>
