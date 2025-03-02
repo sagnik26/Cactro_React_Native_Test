@@ -46,6 +46,14 @@
           ],
           "enableBase64ShareAndroid": true
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow App to access your photos.",
+          "savePhotosPermission": "Allow App to save photos.",
+          "isAccessMediaLocationEnabled": true
+        }
       ]
     ],
     "experiments": {

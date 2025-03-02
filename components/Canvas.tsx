@@ -8,12 +8,19 @@ import {
   Linking,
   Platform,
 } from "react-native";
-import { Canvas, Path } from "@shopify/react-native-skia";
+import {
+  Canvas,
+  Skia,
+  Path,
+  Image as SkImage,
+  PaintStyle,
+} from "@shopify/react-native-skia";
 import React, { useState } from "react";
 import { Colors } from "@/constants/Colors";
 import * as FileSystem from "expo-file-system";
 import Share from "react-native-share";
 import DeviceInfo from "react-native-device-info";
+import * as MediaLibrary from "expo-media-library";
 
 const getAppId = () => {
   return DeviceInfo.getBundleId(); // Automatically gets the App ID from the app's package
@@ -70,35 +77,93 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
     setPhoto(null);
   };
 
-  const shareToInstagram = async (photoUri: string, caption: string) => {
+  const shareToInstagram = async (caption: string) => {
     try {
-      const fileUri = FileSystem.cacheDirectory + "edited_photo.jpg";
-      await FileSystem.copyAsync({ from: photoUri, to: fileUri });
+      if (!photo) return;
 
-      const APP_ID = getAppId(); // Fetch the app's ID dynamically
+      // Request media library permissions
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") {
+        alert("Media Library permission is required to save images.");
+        return;
+      }
 
+      const APP_ID = getAppId();
+
+      // Read the image as Base64
+      const base64Image = await FileSystem.readAsStringAsync(photo, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // Convert Base64 to Skia Image
+      const skData = Skia.Data.fromBase64(base64Image);
+      const image = Skia.Image.MakeImageFromEncoded(skData);
+
+      if (!image) {
+        console.error("Failed to create Skia Image");
+        return;
+      }
+
+      // Create Skia Surface
+      const surface = Skia.Surface.Make(image.width(), image.height());
+      if (!surface) {
+        console.error("Failed to create Skia Surface");
+        return;
+      }
+      const canvas = surface.getCanvas();
+      canvas.drawImage(image, 0, 0);
+
+      // Draw strokes using Skia Paint
+      const paint = Skia.Paint();
+      paint.setColor(Skia.Color(strokeColor));
+      paint.setStrokeWidth(strokeWidth);
+      paint.setStyle(PaintStyle.Stroke);
+
+      paths.forEach((p) => {
+        const path = Skia.Path.MakeFromSVGString(p);
+        if (path) {
+          canvas.drawPath(path, paint);
+        }
+      });
+
+      // Generate the final merged image
+      const snapshot = surface.makeImageSnapshot();
+      if (!snapshot) {
+        console.error("Failed to create image snapshot.");
+        return;
+      }
+
+      // Convert Skia snapshot to a real image file
+      const mergedImageUri = FileSystem.cacheDirectory + "merged_photo.jpg";
+      const imageBase64 = snapshot.encodeToBase64();
+
+      // Ensure the image is correctly saved
+      await FileSystem.writeAsStringAsync(mergedImageUri, imageBase64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // Save to media library
+      await MediaLibrary.saveToLibraryAsync(mergedImageUri);
+
+      // Open Instagram Stories with the edited image
       if (Platform.OS === "ios") {
-        // Instagram Stories Deep Linking on iOS
-        const instagramUrl = `instagram-stories://share?source_application=${APP_ID}&backgroundImage=${fileUri}&contentURL=${encodeURIComponent(
-          caption
-        )}`;
-        Linking.openURL(instagramUrl).catch(() => {
-          alert("Instagram is not installed or does not support sharing.");
-        });
+        const instagramUrl = `instagram-stories://share?backgroundImage=${mergedImageUri}`;
+        Linking.openURL(instagramUrl).catch(() =>
+          alert("Instagram is not installed or does not support sharing.")
+        );
       } else {
-        // Instagram Intent on Android
         const shareOptions: any = {
           title: "Share to Instagram",
-          url: `file://${fileUri}`,
+          url: `file://${mergedImageUri}`,
           social: Share.Social.INSTAGRAM_STORIES,
+          stickerImage: `file://${mergedImageUri}`,
           message: caption,
-          stickerImage: `file://${fileUri}`,
-          appId: APP_ID, // Dynamically set the appId
+          appId: APP_ID,
         };
         await Share.shareSingle(shareOptions);
       }
     } catch (error) {
-      console.error("Error sharing to Instagram", error);
+      console.error("Error sharing to Instagram:", error);
     }
   };
 
@@ -193,7 +258,9 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
           <TouchableOpacity
             onPress={() => {
               if (photo) {
-                shareToInstagram(photo, "hello");
+                if (photo) {
+                  shareToInstagram("Hello There!");
+                }
               }
             }}
           >
