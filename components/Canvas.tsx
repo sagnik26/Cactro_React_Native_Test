@@ -7,6 +7,8 @@ import {
   GestureResponderEvent,
   Linking,
   Platform,
+  TextInput,
+  Button,
 } from "react-native";
 import {
   Canvas,
@@ -39,14 +41,14 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
   const [currentPath, setCurrentPath] = useState<string>("");
   const [strokeColor, setStrokeColor] = useState<string>("black");
   const [strokeWidth, setStrokeWidth] = useState<number>(4);
-  const [isDrawingEnabled, setIsDrawingEnabled] = useState<boolean>(false);
+  const [isCaptionInput, setIsCaptionInput] = useState<boolean>(false);
   const [isColorPickerEnabled, setIsColorPickerEnabled] =
     useState<boolean>(false);
   const [isStrokePickerEnabled, setIsStrokePickerEnabled] =
     useState<boolean>(false);
+  const [caption, setCaption] = useState<string>("");
 
   const handleTouchStart = (event: GestureResponderEvent): void => {
-    if (!isDrawingEnabled) return;
     const touch = event.nativeEvent.touches[0]; // Get the first touch point
     if (touch) {
       setCurrentPath(`M${touch.locationX},${touch.locationY}`);
@@ -54,7 +56,6 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
   };
 
   const handleTouchMove = (event: GestureResponderEvent): void => {
-    if (!isDrawingEnabled) return;
     const touch = event.nativeEvent.touches[0];
     if (touch) {
       setCurrentPath(
@@ -64,7 +65,6 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
   };
 
   const handleTouchEnd = (): void => {
-    if (!isDrawingEnabled) return;
     setPaths([...paths, currentPath]);
     setCurrentPath("");
   };
@@ -211,19 +211,16 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
             onPress={() => {
               setIsColorPickerEnabled(false);
               setIsStrokePickerEnabled(false);
-              setIsDrawingEnabled(!isDrawingEnabled);
+              setIsCaptionInput(!isCaptionInput);
             }}
           >
-            <Text style={[styles.btnText, styles.controlBtn]}>
-              {isDrawingEnabled ? "Disable Draw" : "Enable Draw"}
-            </Text>
+            <Text style={[styles.btnText, styles.controlBtn]}>Add Caption</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => {
               setIsStrokePickerEnabled(false);
               setIsColorPickerEnabled(!isColorPickerEnabled);
             }}
-            disabled={!isDrawingEnabled}
           >
             <Text style={[styles.btnText, styles.controlBtn]}>Color</Text>
           </TouchableOpacity>
@@ -232,7 +229,6 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
               setIsColorPickerEnabled(false);
               setIsStrokePickerEnabled(!isStrokePickerEnabled);
             }}
-            disabled={!isDrawingEnabled}
           >
             <Text style={[styles.btnText, styles.controlBtn]}>Stroke</Text>
           </TouchableOpacity>
@@ -259,10 +255,11 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
             onPress={() => {
               if (photo) {
                 if (photo) {
-                  shareToInstagram("Hello There!");
+                  shareToInstagram(caption);
                 }
               }
             }}
+            style={[styles.btnText, styles.controlBtn]}
           >
             <Text style={styles.btnText}>Share to IG</Text>
           </TouchableOpacity>
@@ -296,6 +293,18 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
               </TouchableOpacity>
             ))}
           </View>
+        </View>
+      )}
+
+      {isCaptionInput && (
+        <View style={styles.captionContainer}>
+          <TextInput
+            style={styles.captionInput}
+            placeholder="Enter your caption"
+            value={caption}
+            onChangeText={setCaption}
+          />
+          <Button title="->" onPress={() => setIsCaptionInput(false)} />
         </View>
       )}
     </View>
@@ -382,5 +391,24 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     fontWeight: "bold",
     color: Colors["theme-gray"][800],
+  },
+  captionInput: {
+    width: "80%",
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "gray",
+    borderRadius: 5,
+    backgroundColor: "white",
+    fontSize: 16,
+    textAlign: "center",
+  },
+  captionContainer: {
+    position: "absolute",
+    top: 80,
+    left: "50%",
+    transform: [{ translateX: "-45%" }],
+    width: "100%",
+    display: "flex",
+    flexDirection: "row",
   },
 });
