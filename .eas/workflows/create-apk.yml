@@ -1,0 +1,9 @@
+name: Create Android APK build
+
+jobs:
+  android_apk_build:
+    name: Build Android APK
+    type: build
+    params:
+      platform: android
+      profile: production-apk
