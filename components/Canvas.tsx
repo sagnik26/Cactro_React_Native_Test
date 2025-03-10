@@ -17,7 +17,7 @@ import {
   Image as SkImage,
   PaintStyle,
 } from "@shopify/react-native-skia";
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Colors } from "@/constants/Colors";
 import * as FileSystem from "expo-file-system";
 import Share from "react-native-share";
@@ -47,6 +47,35 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
   const [isStrokePickerEnabled, setIsStrokePickerEnabled] =
     useState<boolean>(false);
   const [caption, setCaption] = useState<string>("");
+  const [imageSize, setImageSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const canvasRef = useRef<View>(null);
+  const [canvasSize, setCanvasSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+
+  // Get the image dimensions when the photo changes
+  useEffect(() => {
+    if (photo) {
+      // Load the image to get its dimensions
+      Image.getSize(
+        photo,
+        (width, height) => {
+          setImageSize({ width, height });
+        },
+        (error) => console.error("Error getting image size:", error)
+      );
+    }
+  }, [photo]);
+
+  // Get canvas dimensions on layout
+  const handleCanvasLayout = (event: any) => {
+    const { width, height } = event.nativeEvent.layout;
+    setCanvasSize({ width, height });
+  };
 
   const handleTouchStart = (event: GestureResponderEvent): void => {
     const touch = event.nativeEvent.touches[0]; // Get the first touch point
@@ -77,9 +106,29 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
     setPhoto(null);
   };
 
+  const scalePathForSkia = (
+    pathStr: string,
+    fromSize: { width: number; height: number },
+    toSize: { width: number; height: number }
+  ): string => {
+    // Scale factor calculation
+    const scaleX = toSize.width / fromSize.width;
+    const scaleY = toSize.height / fromSize.height;
+
+    // Parse the SVG path and scale each coordinate
+    return pathStr.replace(
+      /([ML])(\d+\.?\d*),(\d+\.?\d*)/g,
+      (match, command, x, y) => {
+        const scaledX = parseFloat(x) * scaleX;
+        const scaledY = parseFloat(y) * scaleY;
+        return `${command}${scaledX},${scaledY}`;
+      }
+    );
+  };
+
   const shareToInstagram = async (caption: string) => {
     try {
-      if (!photo) return;
+      if (!photo || !canvasSize || !imageSize) return;
 
       // Request media library permissions
       const { status } = await MediaLibrary.requestPermissionsAsync();
@@ -104,7 +153,7 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
         return;
       }
 
-      // Create Skia Surface
+      // Create Skia Surface with actual image dimensions
       const surface = Skia.Surface.Make(image.width(), image.height());
       if (!surface) {
         console.error("Failed to create Skia Surface");
@@ -113,14 +162,16 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
       const canvas = surface.getCanvas();
       canvas.drawImage(image, 0, 0);
 
-      // Draw strokes using Skia Paint
+      // Draw strokes using Skia Paint - scale paths to match image dimensions
       const paint = Skia.Paint();
       paint.setColor(Skia.Color(strokeColor));
       paint.setStrokeWidth(strokeWidth);
       paint.setStyle(PaintStyle.Stroke);
 
       paths.forEach((p) => {
-        const path = Skia.Path.MakeFromSVGString(p);
+        // Scale the path from canvas size to image size
+        const scaledPath = scalePathForSkia(p, canvasSize, imageSize);
+        const path = Skia.Path.MakeFromSVGString(scaledPath);
         if (path) {
           canvas.drawPath(path, paint);
         }
@@ -147,16 +198,24 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
 
       // Open Instagram Stories with the edited image
       if (Platform.OS === "ios") {
-        const instagramUrl = `instagram-stories://share?backgroundImage=${mergedImageUri}`;
-        Linking.openURL(instagramUrl).catch(() =>
-          alert("Instagram is not installed or does not support sharing.")
-        );
+        const instagramUrl = `instagram-stories://share?backgroundImage=${encodeURIComponent(
+          mergedImageUri
+        )}`;
+        const canOpen = await Linking.canOpenURL(instagramUrl);
+        if (canOpen) {
+          await Linking.openURL(instagramUrl);
+        } else {
+          alert("Instagram is not installed or does not support sharing.");
+        }
       } else {
         const shareOptions: any = {
           title: "Share to Instagram",
           url: `file://${mergedImageUri}`,
           social: Share.Social.INSTAGRAM_STORIES,
-          stickerImage: `file://${mergedImageUri}`,
+          backgroundImage: `file://${mergedImageUri}`,
+          stickerImage: "", // No sticker, just the full image
+          backgroundBottomColor: "#FFFFFF",
+          backgroundTopColor: "#FFFFFF",
           message: caption,
           appId: APP_ID,
         };
@@ -164,6 +223,7 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
       }
     } catch (error) {
       console.error("Error sharing to Instagram:", error);
+      alert(`Error sharing: ${error}`);
     }
   };
 
@@ -175,6 +235,8 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onLayout={handleCanvasLayout}
+        ref={canvasRef}
       >
         {paths.map((p, index) => (
           <Path
@@ -254,9 +316,7 @@ const CanvasContainer: React.FC<Props> = ({ photo, setPhoto }) => {
           <TouchableOpacity
             onPress={() => {
               if (photo) {
-                if (photo) {
-                  shareToInstagram(caption);
-                }
+                shareToInstagram(caption);
               }
             }}
             style={[styles.btnText, styles.controlBtn]}
